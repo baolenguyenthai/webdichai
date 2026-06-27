@@ -6,6 +6,7 @@ import { getIO } from '../config/socket';
 import { prisma } from '@ai-video-translator/database';
 import fs from 'fs';
 import path from 'path';
+import youtubedl from 'youtube-dl-exec';
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -24,11 +25,52 @@ export const videoWorker = new Worker(
 
     await prisma.project.update({
       where: { id: projectId },
+      data: { status: 'ANALYZING_LINK' },
+    });
+
+    try {
+      const io = getIO();
+      io.to(`project_${projectId}`).emit('processProgress', {
+        projectId,
+        status: 'ANALYZING_LINK',
+        percent: 0,
+      });
+    } catch (e) {}
+
+    let finalVideoUrl = videoUrl;
+
+    // Nếu link không kết thúc bằng file media chuẩn, ta sẽ dùng yt-dlp để lấy link thực tế
+    const needsYtdl = /youtube\.com|youtu\.be|douyin\.com|tiktok\.com|facebook\.com|vimeo\.com/i.test(videoUrl);
+    
+    if (needsYtdl) {
+      console.log(`Phát hiện web link: ${videoUrl}. Đang bóc tách direct link...`);
+      try {
+        const output = await youtubedl(videoUrl, {
+          dumpJson: true,
+          noWarnings: true,
+          noCallHome: true,
+          noCheckCertificate: true,
+          preferFreeFormats: true,
+        });
+        if (output && output.url) {
+          finalVideoUrl = output.url;
+          console.log(`Lấy thành công direct link!`);
+        } else {
+          throw new Error("Không tìm thấy stream video trong link này.");
+        }
+      } catch (err: any) {
+        console.error(`Lỗi bóc tách link ${videoUrl}:`, err);
+        throw err;
+      }
+    }
+
+    await prisma.project.update({
+      where: { id: projectId },
       data: { status: 'EXTRACTING_AUDIO' },
     });
 
     return new Promise((resolve, reject) => {
-      ffmpeg(videoUrl)
+      ffmpeg(finalVideoUrl)
         .noVideo()
         .audioCodec('libmp3lame')
         .on('progress', (progress) => {
