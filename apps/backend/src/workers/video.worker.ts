@@ -103,7 +103,8 @@ const resolveVideoSource = async (
     });
   });
 
-  const publicUrl = toPublicTempUrl(sourcePath);
+  const { publishVideoFile } = require('../utils/media');
+  const publicUrl = await publishVideoFile(sourcePath, projectId);
   await prisma.project.update({
     where: { id: projectId },
     data: { videoUrl: publicUrl },
