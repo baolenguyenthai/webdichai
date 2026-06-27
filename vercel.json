@@ -1,6 +1,0 @@
-{
-  "buildCommand": "pnpm turbo run build --filter=frontend...",
-  "installCommand": "pnpm install",
-  "framework": "nextjs",
-  "outputDirectory": "apps/frontend/.next"
-}
