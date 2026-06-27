@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  name             String?
+  password         String?
+  googleId         String?   @unique
+  avatar           String?
+  role             Role      @default(USER)
+  credits          Int       @default(100) // Free credits ban đầu
+  stripeCustomerId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  projects      Project[]
+  folders       Folder[]
+  refreshTokens RefreshToken[]
+  otps          OTP[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model OTP {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  type      String   // REGISTER, FORGOT_PASSWORD
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Project {
+  id            String    @id @default(cuid())
+  name          String
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderId      String?
+  folder        Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  videoUrl      String?
+  originalLang  String?
+  targetLang    String?
+  status        String    @default("UPLOADED") // UPLOADED, EXTRACTING_AUDIO, AUDIO_EXTRACTED, TRANSCRIBING, TRANSCRIBED, TRANSLATING, DUBBING, COMPLETED, EXPORTING, EXPORTED, FAILED
+  exportUrl     String?   @db.Text
+  isFavorite    Boolean   @default(false)
+  isTrashed     Boolean   @default(false)
+  trashedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  subtitles     Subtitle[]
+}
+
+model Subtitle {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  text           String   @db.Text
+  translatedText String?  @db.Text
+  startTime      Float
+  endTime        Float
+  audioUrl       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Folder {
+  id        String    @id @default(cuid())
+  name      String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects  Project[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}

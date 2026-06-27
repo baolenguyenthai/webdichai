@@ -1,0 +1,39 @@
+services:
+  # 1. Backend API (Node.js)
+  - type: web
+    name: ai-video-translator-backend
+    env: node
+    buildCommand: pnpm install && pnpm run build --filter=@ai-video-translator/backend
+    startCommand: cd apps/backend && pnpm run start
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false # Set in Render Dashboard
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: ai-video-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: ai-video-redis
+          property: port
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+        
+  # 2. Redis Cache (for BullMQ)
+  - type: redis
+    name: ai-video-redis
+    ipAllowList: [] # Chỉ cho phép nội bộ Render kết nối
