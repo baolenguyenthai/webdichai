@@ -74,8 +74,26 @@ export const videoWorker = new Worker(
         });
         if (output && output.url) {
           finalVideoUrl = output.url;
-          console.log(`Lấy thành công direct link!`);
-          emitProgress(0, 'ANALYZING_LINK', 100, 'Bóc tách thành công!', 2);
+          console.log(`Lấy thành công direct link! Đang đẩy video lên hệ thống lưu trữ Cloudinary...`);
+          emitProgress(0, 'ANALYZING_LINK', 75, 'Đang tải video về máy chủ lưu trữ...', 10);
+          
+          // Tải video trực tiếp vào Cloudinary để frontend có thể phát được (fix lỗi màn hình đen)
+          const cloudinary = require('../config/cloudinary').default;
+          const uploadResult = await cloudinary.uploader.upload(finalVideoUrl, {
+            resource_type: 'video',
+            folder: 'ai-video-translator/projects'
+          });
+          
+          finalVideoUrl = uploadResult.secure_url;
+          
+          // Cập nhật lại db để lấy link mới nhất của Cloudinary
+          await prisma.project.update({
+            where: { id: projectId },
+            data: { videoUrl: finalVideoUrl }
+          });
+
+          console.log(`Lưu trữ thành công vào Cloudinary: ${finalVideoUrl}`);
+          emitProgress(0, 'ANALYZING_LINK', 100, 'Tải video thành công!', 2);
         } else {
           throw new Error("Không tìm thấy stream video trong link này.");
         }
@@ -132,12 +150,13 @@ export const videoWorker = new Worker(
 
             emitProgress(2, 'TRANSCRIBED', 100, 'Đã hoàn thành phân tích!', 0);
 
-          } catch (aiError) {
+          } catch (aiError: any) {
             console.error('Lỗi AI:', aiError);
             await prisma.project.update({
               where: { id: projectId },
               data: { status: 'FAILED' },
             });
+            emitProgress(2, 'FAILED', 0, `Lỗi AI: ${aiError.message || 'Không thể bóc băng video'}`);
           } finally {
             // Xóa file local sau khi xử lý xong
             if (fs.existsSync(outputPath)) {
@@ -154,6 +173,8 @@ export const videoWorker = new Worker(
             where: { id: projectId },
             data: { status: 'FAILED' },
           });
+          
+          emitProgress(1, 'FAILED', 0, `Lỗi Video: ${err.message || 'Không thể xử lý định dạng video'}`);
 
           reject(err);
         })
