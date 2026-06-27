@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { useSocket } from "@/hooks/useSocket"
+import { ProjectProgressCard } from "@/components/dashboard/ProjectProgressCard"
 
 interface Project {
   id: string
@@ -20,6 +21,10 @@ interface Project {
   videoUrl?: string
   isFavorite: boolean
   updatedAt: string
+  progress?: number
+  message?: string
+  estimatedTimeLeft?: number
+  steps?: any[]
 }
 
 export default function DashboardPage() {
@@ -65,11 +70,25 @@ export default function DashboardPage() {
     // Join room cho tất cả các project hiện tại để nghe thông báo
     projects.forEach(p => socket.emit('joinProjectRoom', p.id))
     
-    socket.on('processProgress', (data: { projectId: string; status: string; percent: number }) => {
+    socket.on('processProgress', (data: { 
+      projectId: string; 
+      status: string; 
+      percent: number;
+      message?: string;
+      estimatedTimeLeft?: number;
+      steps?: any[];
+    }) => {
       setProjects(prev => 
         prev.map(p => 
           p.id === data.projectId 
-            ? { ...p, status: data.status, progress: data.percent } 
+            ? { 
+                ...p, 
+                status: data.status, 
+                progress: data.percent,
+                message: data.message,
+                estimatedTimeLeft: data.estimatedTimeLeft,
+                steps: data.steps
+              } 
             : p
         )
       )
@@ -138,17 +157,16 @@ export default function DashboardPage() {
                   <Play className="h-8 w-8 text-muted-foreground opacity-50" />
                 )}
                 
-                {project.status === 'EXTRACTING_AUDIO' && (
-                  <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center p-4">
-                    <p className="text-white text-sm mb-2 font-medium">Đang tách âm thanh...</p>
-                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-1 overflow-hidden">
-                      <div className="bg-primary h-1.5 rounded-full transition-all duration-300" style={{ width: `${project.progress || 0}%` }}></div>
-                    </div>
-                    <p className="text-white text-xs">{project.progress || 0}%</p>
-                  </div>
+                {['ANALYZING_LINK', 'EXTRACTING_AUDIO', 'TRANSCRIBING', 'TRANSLATING', 'DUBBING', 'RENDERING'].includes(project.status) && (
+                  <ProjectProgressCard 
+                    percent={project.progress || 0}
+                    message={project.message}
+                    estimatedTimeLeft={project.estimatedTimeLeft}
+                    steps={project.steps}
+                  />
                 )}
 
-                {project.status !== 'EXTRACTING_AUDIO' && (
+                {!['ANALYZING_LINK', 'EXTRACTING_AUDIO', 'TRANSCRIBING', 'TRANSLATING', 'DUBBING', 'RENDERING'].includes(project.status) && (
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                     <Link href={`/projects/${project.id}`}>
                       <Button variant="secondary" size="sm">Mở Studio</Button>

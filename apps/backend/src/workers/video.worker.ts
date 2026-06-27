@@ -21,6 +21,32 @@ export const videoWorker = new Worker(
     const { projectId, videoUrl } = job.data;
     const outputPath = path.join(tempDir, `${projectId}.mp3`);
 
+    const emitProgress = (
+      stepIndex: number,
+      status: string,
+      percent: number,
+      message: string,
+      eta: number = 0
+    ) => {
+      try {
+        const io = getIO();
+        io.to(`project_${projectId}`).emit('processProgress', {
+          projectId,
+          status,
+          currentStepIndex: stepIndex,
+          totalSteps: 3,
+          percent,
+          message,
+          estimatedTimeLeft: eta,
+          steps: [
+            { name: 'Bóc tách Video', status: stepIndex > 0 ? 'done' : (stepIndex === 0 ? 'processing' : 'pending') },
+            { name: 'Tách âm thanh', status: stepIndex > 1 ? 'done' : (stepIndex === 1 ? 'processing' : 'pending') },
+            { name: 'Phân tích AI', status: stepIndex > 2 ? 'done' : (stepIndex === 2 ? 'processing' : 'pending') }
+          ]
+        });
+      } catch (e) {}
+    };
+
     console.log(`Bắt đầu xử lý Project ${projectId}...`);
 
     await prisma.project.update({
@@ -28,14 +54,7 @@ export const videoWorker = new Worker(
       data: { status: 'ANALYZING_LINK' },
     });
 
-    try {
-      const io = getIO();
-      io.to(`project_${projectId}`).emit('processProgress', {
-        projectId,
-        status: 'ANALYZING_LINK',
-        percent: 0,
-      });
-    } catch (e) {}
+    emitProgress(0, 'ANALYZING_LINK', 10, 'Đang phân tích định dạng file...', 10);
 
     let finalVideoUrl = videoUrl;
 
@@ -44,6 +63,7 @@ export const videoWorker = new Worker(
     
     if (needsYtdl) {
       console.log(`Phát hiện web link: ${videoUrl}. Đang bóc tách direct link...`);
+      emitProgress(0, 'ANALYZING_LINK', 50, 'Đang bóc tách link gốc từ trang web...', 15);
       try {
         const output: any = await youtubedl(videoUrl, {
           dumpJson: true,
@@ -55,6 +75,7 @@ export const videoWorker = new Worker(
         if (output && output.url) {
           finalVideoUrl = output.url;
           console.log(`Lấy thành công direct link!`);
+          emitProgress(0, 'ANALYZING_LINK', 100, 'Bóc tách thành công!', 2);
         } else {
           throw new Error("Không tìm thấy stream video trong link này.");
         }
@@ -62,6 +83,8 @@ export const videoWorker = new Worker(
         console.error(`Lỗi bóc tách link ${videoUrl}:`, err);
         throw err;
       }
+    } else {
+      emitProgress(0, 'ANALYZING_LINK', 100, 'Link media hợp lệ.', 1);
     }
 
     await prisma.project.update({
@@ -77,21 +100,16 @@ export const videoWorker = new Worker(
           const percent = Math.floor(progress.percent || 0);
           console.log(`Processing ${projectId}: ${percent}%`);
           
-          try {
-            const io = getIO();
-            io.to(`project_${projectId}`).emit('processProgress', {
-              projectId,
-              status: 'EXTRACTING_AUDIO',
-              percent,
-            });
-          } catch (e) {
-             // Socket.io có thể chưa khởi tạo trong môi trường test
-          }
+          // Ước lượng ETA giả lập (nếu percent là 50 thì còn 50%, giả sử 1% = 0.5s)
+          const eta = Math.max(1, Math.floor((100 - percent) * 0.5));
+          emitProgress(1, 'EXTRACTING_AUDIO', percent, `Đang tách âm thanh... (${percent}%)`, eta);
         })
         .on('end', async () => {
           // Gọi AI Service để transcribe
           try {
             console.log(`Bắt đầu Transcribe bằng AI cho ${projectId}...`);
+            emitProgress(2, 'TRANSCRIBING', 10, 'Đang phân tích AI (Speech-to-Text)... Quá trình này có thể mất vài phút tùy độ dài video.', 60);
+
             const AIService = require('../services/ai.service').AIService;
             const subtitles = await AIService.transcribeAudio(outputPath);
             
@@ -112,14 +130,7 @@ export const videoWorker = new Worker(
               data: { status: 'TRANSCRIBED' },
             });
 
-            try {
-              const io = getIO();
-              io.to(`project_${projectId}`).emit('processProgress', {
-                projectId,
-                status: 'TRANSCRIBED',
-                percent: 100,
-              });
-            } catch (e) {}
+            emitProgress(2, 'TRANSCRIBED', 100, 'Đã hoàn thành phân tích!', 0);
 
           } catch (aiError) {
             console.error('Lỗi AI:', aiError);
