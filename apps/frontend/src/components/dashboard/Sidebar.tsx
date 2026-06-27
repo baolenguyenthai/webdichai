@@ -22,18 +22,18 @@ export function Sidebar() {
   const { user } = useAuthStore()
 
   const links = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'All Videos', href: '/dashboard/videos', icon: Video },
-    { name: 'Folders', href: '/dashboard/folders', icon: Folder },
-    { name: 'Favorites', href: '/dashboard/favorites', icon: Heart },
-    { name: 'Team Workspace', href: '/dashboard/team', icon: Users },
-    { name: 'Trash', href: '/dashboard/trash', icon: Trash2 },
-    { name: 'Pricing', href: '/pricing', icon: CreditCard },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+    { name: 'Tổng quan', href: '/dashboard', icon: LayoutDashboard },
+    { name: 'Tất cả Video', href: '/dashboard/videos', icon: Video },
+    { name: 'Thư mục', href: '/dashboard/folders', icon: Folder },
+    { name: 'Yêu thích', href: '/dashboard/favorites', icon: Heart },
+    { name: 'Nhóm làm việc', href: '/dashboard/team', icon: Users },
+    { name: 'Thùng rác', href: '/dashboard/trash', icon: Trash2 },
+    { name: 'Bảng giá', href: '/pricing', icon: CreditCard },
+    { name: 'Cài đặt', href: '/dashboard/settings', icon: Settings },
   ]
 
   const adminLinks = [
-    { name: 'Admin Dashboard', href: '/admin', icon: ShieldAlert },
+    { name: 'Quản trị viên', href: '/admin', icon: ShieldAlert },
   ]
 
   return (
@@ -41,7 +41,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center border-b px-6">
         <Link href="/dashboard" className="flex items-center gap-2 font-bold">
           <Video className="h-6 w-6 text-primary" />
-          <span>AI Translator</span>
+          <span>Dịch Video AI</span>
         </Link>
       </div>
       <ScrollArea className="flex-1">
