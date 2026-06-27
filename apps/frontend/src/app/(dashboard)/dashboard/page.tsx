@@ -68,10 +68,52 @@ export default function DashboardPage() {
   const [sort, setSort] = useState("updatedAt:desc")
   const [loading, setLoading] = useState(true)
 
+const PIPELINE_STEPS = [
+  'Video',
+  'Download',
+  'FFmpeg',
+  'Speech to Text',
+  'Detect Language',
+  'Translate',
+  'Voice Dub',
+  'Subtitle',
+  'Export',
+]
+
+const STATUS_TO_STEP: Record<string, number> = {
+  'PENDING': 0,
+  'VIDEO_RECEIVED': 0,
+  'DOWNLOADING': 1,
+  'ANALYZING_LINK': 1,
+  'FFMPEG_EXTRACTING': 2,
+  'EXTRACTING_AUDIO': 2,
+  'SPEECH_TO_TEXT': 3,
+  'TRANSCRIBING': 3,
+  'DETECTING_LANGUAGE': 4,
+  'TRANSLATING': 5,
+  'VOICE_DUBBING': 6,
+  'DUBBING': 6,
+  'SUBTITLE_READY': 7,
+  'EXPORTING': 8,
+}
+
   const fetchProjects = async () => {
     try {
       const res = await api.get(`/projects?search=${encodeURIComponent(search)}&sort=${sort}`)
-      setProjects(res.data.data)
+      
+      const enrichedProjects = res.data.data.map((p: any) => {
+        if (processingStatuses.includes(p.status) && !p.steps) {
+          const stepIdx = STATUS_TO_STEP[p.status] ?? 0;
+          p.progress = Math.floor((stepIdx / PIPELINE_STEPS.length) * 100);
+          p.steps = PIPELINE_STEPS.map((name, i) => ({
+             name,
+             status: i < stepIdx ? 'done' : (i === stepIdx ? 'processing' : 'pending')
+          }));
+        }
+        return p;
+      });
+
+      setProjects(enrichedProjects)
     } catch (error) {
       toast.error("Không thể tải danh sách dự án")
     } finally {
