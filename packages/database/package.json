@@ -15,8 +15,9 @@
     "@prisma/client": "^5.14.0"
   },
   "devDependencies": {
+    "@ai-video-translator/typescript-config": "workspace:*",
+    "@types/node": "^26.0.1",
     "prisma": "^5.14.0",
-    "typescript": "^5.0.0",
-    "@ai-video-translator/typescript-config": "workspace:*"
+    "typescript": "^5.0.0"
   }
 }
