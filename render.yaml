@@ -3,7 +3,7 @@ services:
   - type: web
     name: ai-video-translator-backend
     env: node
-    buildCommand: pnpm install && pnpm run build --filter=@ai-video-translator/backend
+    buildCommand: npm install -g pnpm && pnpm install && pnpm run build --filter=@ai-video-translator/backend
     startCommand: cd apps/backend && pnpm run start
     envVars:
       - key: PORT
