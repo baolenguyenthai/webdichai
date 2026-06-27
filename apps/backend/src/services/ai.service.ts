@@ -93,17 +93,27 @@ export class AIService {
 
       jsonStr = cleanJsonResponse(jsonStr);
 
-      const subtitles = JSON.parse(jsonStr);
+      let subtitles = JSON.parse(jsonStr);
       
       if (!Array.isArray(subtitles)) {
         // Nếu nó trả về dạng object chứa array
+        let foundArray = false;
         for (const key in subtitles) {
-          if (Array.isArray(subtitles[key])) return subtitles[key];
+          if (Array.isArray(subtitles[key])) {
+            subtitles = subtitles[key];
+            foundArray = true;
+            break;
+          }
         }
-        throw new Error("Invalid output format: not an array");
+        if (!foundArray) throw new Error("Invalid output format: not an array");
       }
 
-      return subtitles;
+      // Ép kiểu đảm bảo đúng định dạng Float cho Prisma
+      return subtitles.map((s: any) => ({
+        text: String(s.text || ''),
+        startTime: Number(s.startTime || 0),
+        endTime: Number(s.endTime || 0),
+      }));
     } catch (error) {
       console.error('Gemini API Error:', error);
       if (process.env.AI_ALLOW_FALLBACK === 'false') throw error;
