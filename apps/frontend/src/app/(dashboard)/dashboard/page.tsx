@@ -151,7 +151,7 @@ export default function DashboardPage() {
                 <Heart className="absolute top-2 left-2 h-4 w-4 text-red-500 fill-red-500 z-10" />
               )}
               <div className="aspect-video bg-muted relative flex items-center justify-center">
-                {project.videoUrl ? (
+                {project.videoUrl && !/youtube\.com|youtu\.be|douyin\.com|tiktok\.com|facebook\.com|vimeo\.com/i.test(project.videoUrl) ? (
                   <video src={project.videoUrl} className="w-full h-full object-cover" />
                 ) : (
                   <Play className="h-8 w-8 text-muted-foreground opacity-50" />

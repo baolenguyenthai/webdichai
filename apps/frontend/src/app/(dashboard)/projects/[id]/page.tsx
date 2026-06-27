@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { ChevronLeft, Save, Trash2, Plus, Type, Languages, Volume2 } from "lucide-react"
+import { ChevronLeft, Save, Trash2, Plus, Type, Languages, Volume2, Play } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -269,13 +269,23 @@ export default function SubtitleEditorPage() {
         {/* Left: Video Player */}
         <div className="flex-1 border-r flex flex-col bg-black">
           <div className="flex-1 flex items-center justify-center relative">
-            <video 
-              ref={videoRef}
-              src={project.videoUrl} 
-              controls 
-              className="max-w-full max-h-full aspect-video"
-              crossOrigin="anonymous"
-            />
+            {project.videoUrl && !/youtube\.com|youtu\.be|douyin\.com|tiktok\.com|facebook\.com|vimeo\.com/i.test(project.videoUrl) ? (
+              <video 
+                ref={videoRef}
+                src={project.videoUrl} 
+                controls 
+                className="max-w-full max-h-full aspect-video"
+                crossOrigin="anonymous"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center text-white/50 gap-4">
+                <Play className="h-16 w-16 opacity-50" />
+                <p className="text-sm px-8 text-center">Video được nhập từ URL web.<br/>Trình phát không khả dụng với link ngoài, vui lòng xem ở trang gốc hoặc dựa vào Audio để chỉnh sửa.</p>
+                <a href={project.videoUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline text-xs bg-primary/20 px-4 py-2 rounded-full">
+                  Mở thẻ mới xem video gốc
+                </a>
+              </div>
+            )}
           </div>
         </div>
 
