@@ -57,7 +57,7 @@ export const exportWorker = new Worker(
       // 2. Tạo file SRT từ Subtitles
       const subtitles = await prisma.subtitle.findMany({ where: { projectId }, orderBy: { startTime: 'asc' } });
       let srtContent = '';
-      subtitles.forEach((sub, i) => {
+      subtitles.forEach((sub: any, i: number) => {
         const text = sub.translatedText || sub.text;
         srtContent += `${i + 1}\n${formatSrtTime(sub.startTime)} --> ${formatSrtTime(sub.endTime)}\n${text}\n\n`;
       });
