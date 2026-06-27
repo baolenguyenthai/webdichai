@@ -363,7 +363,8 @@ const STATUS_TO_STEP: Record<string, number> = {
                 </DropdownMenu>
               </CardFooter>
             </Card>
-          ))}
+          )
+        })}
         </div>
       )}
     </div>
