@@ -45,10 +45,10 @@ export const videoWorker = new Worker(
     if (needsYtdl) {
       console.log(`Phát hiện web link: ${videoUrl}. Đang bóc tách direct link...`);
       try {
-        const output = await youtubedl(videoUrl, {
+        const output: any = await youtubedl(videoUrl, {
           dumpJson: true,
           noWarnings: true,
-          noCallHome: true,
+          callHome: false,
           noCheckCertificate: true,
           preferFreeFormats: true,
         });
