@@ -49,7 +49,7 @@ export const videoWorker = new Worker(
           dumpJson: true,
           noWarnings: true,
           callHome: false,
-          noCheckCertificate: true,
+          noCheckCertificates: true,
           preferFreeFormats: true,
         });
         if (output && output.url) {
