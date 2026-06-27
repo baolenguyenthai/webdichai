@@ -16,7 +16,7 @@ export class AIService {
       // 1. Tải file âm thanh lên Google File API
       file = await ai.files.upload({
         file: audioPath,
-        mimeType: 'audio/mp3', // Hoặc type tương ứng
+        config: { mimeType: 'audio/mp3' },
       });
 
       console.log(`[Gemini] Đã upload audio: ${file.name}`);

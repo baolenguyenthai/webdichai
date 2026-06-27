@@ -128,6 +128,10 @@ export class ProjectController {
         data: { status: 'PENDING' },
       });
 
+      if (!project.videoUrl) {
+        throw new Error('Project does not have a video URL');
+      }
+
       await addVideoProcessingJob(project.id, project.videoUrl);
 
       res.status(200).json({ status: 'success', message: 'Project queued for retry' });
