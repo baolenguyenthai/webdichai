@@ -1,7 +1,7 @@
 "use client"
 
 import { Sidebar } from "@/components/dashboard/Sidebar"
-import { useAuthStore } from "@/store/auth.store"
+import { api, useAuthStore } from "@/store/auth.store"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import {
@@ -20,7 +20,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const { user, logout } = useAuthStore()
+  const { user, logout, refreshToken } = useAuthStore()
   const router = useRouter()
 
   useEffect(() => {
@@ -49,9 +49,9 @@ export default function DashboardLayout({
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>{user.name || user.email}</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Settings</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push('/dashboard/settings')}>Settings</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { logout(); router.push('/login'); }}>
+              <DropdownMenuItem onClick={() => { api.post('/auth/logout', { refreshToken }).catch(() => null); logout(); router.push('/login'); }}>
                 Logout
               </DropdownMenuItem>
             </DropdownMenuContent>

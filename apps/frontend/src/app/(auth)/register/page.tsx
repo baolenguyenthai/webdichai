@@ -45,7 +45,7 @@ export default function RegisterPage() {
     setLoading(true)
     try {
       const res = await api.post("/auth/register", values)
-      setAuth(res.data.data.user, res.data.data.tokens.accessToken)
+      setAuth(res.data.data.user, res.data.data.tokens.accessToken, res.data.data.tokens.refreshToken)
       toast.success("Đăng ký thành công!")
       router.push("/dashboard")
     } catch (error: any) {

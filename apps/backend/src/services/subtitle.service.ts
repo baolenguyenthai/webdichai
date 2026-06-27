@@ -1,4 +1,5 @@
 import { prisma } from '@ai-video-translator/database';
+import { buildSubtitleFile } from '../utils/subtitle-format';
 
 export class SubtitleService {
   static async getSubtitles(projectId: string) {
@@ -8,7 +9,10 @@ export class SubtitleService {
     });
   }
 
-  static async updateSubtitle(id: string, data: { text?: string, startTime?: number, endTime?: number }) {
+  static async updateSubtitle(
+    id: string,
+    data: { text?: string; translatedText?: string; startTime?: number; endTime?: number; audioUrl?: string }
+  ) {
     return prisma.subtitle.update({
       where: { id },
       data,
@@ -28,5 +32,10 @@ export class SubtitleService {
         ...data,
       },
     });
+  }
+
+  static async exportSubtitleFile(projectId: string, format: 'srt' | 'ass' | 'vtt') {
+    const subtitles = await this.getSubtitles(projectId);
+    return buildSubtitleFile(subtitles, format);
   }
 }

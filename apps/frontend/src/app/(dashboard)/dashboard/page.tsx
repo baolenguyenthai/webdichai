@@ -6,13 +6,14 @@ import { api } from "@/store/auth.store"
 import { UploadVideoModal } from "@/components/dashboard/UploadVideoModal"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search, MoreVertical, Play, Heart, Trash2, Edit } from "lucide-react"
+import { Search, MoreVertical, Play, Heart, Trash2, Edit, Video, Loader2, CheckCircle2, HardDrive, Clock, Bell } from "lucide-react"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { useSocket } from "@/hooks/useSocket"
 import { ProjectProgressCard } from "@/components/dashboard/ProjectProgressCard"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Project {
   id: string
@@ -27,14 +28,49 @@ interface Project {
   steps?: any[]
 }
 
+interface DashboardStats {
+  totalVideos: number
+  processingVideos: number
+  completedVideos: number
+  storageUsedBytes: number
+  aiMinutesUsed: number
+  notifications: Array<{ id: string; title: string; status: string; createdAt: string }>
+}
+
+const processingStatuses = [
+  'PENDING',
+  'VIDEO_RECEIVED',
+  'DOWNLOADING',
+  'ANALYZING_LINK',
+  'EXTRACTING_AUDIO',
+  'FFMPEG_EXTRACTING',
+  'TRANSCRIBING',
+  'SPEECH_TO_TEXT',
+  'DETECTING_LANGUAGE',
+  'TRANSLATING',
+  'DUBBING',
+  'VOICE_DUBBING',
+  'SUBTITLE_READY',
+  'EXPORTING',
+]
+
+const formatBytes = (bytes: number) => {
+  if (!bytes) return "0 MB"
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / Math.pow(1024, index)).toFixed(index < 2 ? 0 : 1)} ${units[index]}`
+}
+
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([])
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [search, setSearch] = useState("")
+  const [sort, setSort] = useState("updatedAt:desc")
   const [loading, setLoading] = useState(true)
 
   const fetchProjects = async () => {
     try {
-      const res = await api.get(`/projects?search=${search}`)
+      const res = await api.get(`/projects?search=${encodeURIComponent(search)}&sort=${sort}`)
       setProjects(res.data.data)
     } catch (error) {
       toast.error("Không thể tải danh sách dự án")
@@ -43,9 +79,19 @@ export default function DashboardPage() {
     }
   }
 
+  const fetchStats = async () => {
+    try {
+      const res = await api.get("/projects/stats/dashboard")
+      setStats(res.data.data)
+    } catch {
+      setStats(null)
+    }
+  }
+
   useEffect(() => {
     fetchProjects()
-  }, [search])
+    fetchStats()
+  }, [search, sort])
 
   const handleAction = async (action: string, id: string) => {
     try {
@@ -58,8 +104,15 @@ export default function DashboardPage() {
       } else if (action === "retry") {
         await api.post(`/projects/${id}/retry`)
         toast.success("Đã đưa vào hàng đợi xử lý lại")
+      } else if (action === "rename") {
+        const p = projects.find((x) => x.id === id)
+        const nextName = window.prompt("Tên video", p?.name || "")
+        if (!nextName) return
+        await api.patch(`/projects/${id}`, { name: nextName })
+        toast.success("Đã đổi tên")
       }
       fetchProjects()
+      fetchStats()
     } catch (error) {
       toast.error("Thao tác thất bại")
     }
@@ -96,9 +149,9 @@ export default function DashboardPage() {
         )
       )
       
-      // Nếu tách audio xong, tự reload lại list
-      if (data.status === 'AUDIO_EXTRACTED' && data.percent === 100) {
-        toast.success(`Video đã tách Audio xong!`)
+      if (data.status === 'EXPORTED' && data.percent === 100) {
+        toast.success(`Render video hoàn tất`)
+        fetchStats()
       }
     })
 
@@ -117,6 +170,43 @@ export default function DashboardPage() {
         <UploadVideoModal onUploadSuccess={fetchProjects} />
       </div>
 
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          { label: "Tổng số video", value: stats?.totalVideos ?? 0, icon: Video },
+          { label: "Đang xử lý", value: stats?.processingVideos ?? 0, icon: Loader2 },
+          { label: "Hoàn thành", value: stats?.completedVideos ?? 0, icon: CheckCircle2 },
+          { label: "Dung lượng", value: formatBytes(stats?.storageUsedBytes ?? 0), icon: HardDrive },
+          { label: "Phút AI", value: `${stats?.aiMinutesUsed ?? 0} phút`, icon: Clock },
+        ].map((item) => (
+          <Card key={item.label}>
+            <CardContent className="flex items-center gap-3 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <item.icon className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">{item.label}</p>
+                <p className="text-xl font-semibold">{item.value}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {stats?.notifications?.length ? (
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <Bell className="h-4 w-4" /> Thông báo
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {stats.notifications.map((item) => (
+              <Link key={item.id} href={`/projects/${item.id}`} className="rounded-md bg-background px-3 py-2 text-sm hover:bg-muted">
+                {item.title}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -127,6 +217,17 @@ export default function DashboardPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <Select value={sort} onValueChange={(value) => setSort(value || "updatedAt:desc")}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Sắp xếp" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="updatedAt:desc">Mới cập nhật</SelectItem>
+            <SelectItem value="createdAt:desc">Mới tạo</SelectItem>
+            <SelectItem value="name:asc">Tên A-Z</SelectItem>
+            <SelectItem value="status:asc">Trạng thái</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? (
@@ -160,7 +261,7 @@ export default function DashboardPage() {
                   <Play className="h-8 w-8 text-muted-foreground opacity-50" />
                 )}
                 
-                {['ANALYZING_LINK', 'EXTRACTING_AUDIO', 'TRANSCRIBING', 'TRANSLATING', 'DUBBING', 'RENDERING'].includes(project.status) && (
+                {processingStatuses.includes(project.status) && (
                   <ProjectProgressCard 
                     percent={project.progress || 0}
                     message={project.message}
@@ -169,7 +270,7 @@ export default function DashboardPage() {
                   />
                 )}
 
-                {!['ANALYZING_LINK', 'EXTRACTING_AUDIO', 'TRANSCRIBING', 'TRANSLATING', 'DUBBING', 'RENDERING'].includes(project.status) && (
+                {!processingStatuses.includes(project.status) && (
                   <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                     <Link href={`/projects/${project.id}`}>
                       <Button variant="secondary" size="sm">Mở Studio</Button>
@@ -197,7 +298,7 @@ export default function DashboardPage() {
                         <Play className="mr-2 h-4 w-4" /> Thử lại xử lý
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleAction("rename", project.id)}>
                       <Edit className="mr-2 h-4 w-4" /> Đổi tên
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => handleAction("favorite", project.id)}>

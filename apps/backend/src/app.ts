@@ -6,6 +6,8 @@ import morgan from 'morgan';
 import authRoutes from './routes/auth.routes';
 import projectRoutes from './routes/project.routes';
 import subtitleRoutes from './routes/subtitle.routes';
+import docsRoutes from './routes/docs.routes';
+import { rateLimit } from './middlewares/rate-limit.middleware';
 
 import path from 'path';
 
@@ -16,13 +18,17 @@ import { PaymentController } from './controllers/payment.controller';
 
 // Middlewares
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
+  credentials: true,
+}));
+app.use(rateLimit);
 
 // Stripe Webhook cần Raw Body, phải đặt TRƯỚC express.json()
 app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), PaymentController.stripeWebhook);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('dev'));
 
 // Cung cấp static file cho temp folder
@@ -31,6 +37,7 @@ app.use('/temp', express.static(path.join(__dirname, '../temp')));
 import adminRoutes from './routes/admin.routes';
 
 // Routes
+app.use('/api', docsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/subtitles', subtitleRoutes);

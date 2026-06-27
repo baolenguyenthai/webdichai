@@ -18,7 +18,8 @@ export interface User {
 interface AuthState {
   user: User | null;
   accessToken: string | null;
-  setAuth: (user: User, token: string) => void;
+  refreshToken: string | null;
+  setAuth: (user: User, token: string, refreshToken?: string | null) => void;
   logout: () => void;
 }
 
@@ -27,8 +28,9 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       accessToken: null,
-      setAuth: (user, token) => set({ user, accessToken: token }),
-      logout: () => set({ user: null, accessToken: null }),
+      refreshToken: null,
+      setAuth: (user, token, refreshToken) => set({ user, accessToken: token, refreshToken: refreshToken || null }),
+      logout: () => set({ user: null, accessToken: null, refreshToken: null }),
     }),
     {
       name: 'auth-storage',
@@ -43,3 +45,29 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config
+    const refreshToken = useAuthStore.getState().refreshToken
+
+    if (error.response?.status === 401 && refreshToken && !originalRequest?._retry) {
+      originalRequest._retry = true
+      try {
+        const res = await axios.post(`${api.defaults.baseURL}/auth/refresh`, { refreshToken })
+        useAuthStore.getState().setAuth(
+          res.data.data.user,
+          res.data.data.tokens.accessToken,
+          res.data.data.tokens.refreshToken
+        )
+        originalRequest.headers.Authorization = `Bearer ${res.data.data.tokens.accessToken}`
+        return api(originalRequest)
+      } catch {
+        useAuthStore.getState().logout()
+      }
+    }
+
+    return Promise.reject(error)
+  }
+)

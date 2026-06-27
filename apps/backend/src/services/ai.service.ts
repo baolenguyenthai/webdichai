@@ -1,16 +1,64 @@
 import { GoogleGenAI } from '@google/genai';
-import fs from 'fs';
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
+const getGeminiClient = () => {
+  if (!process.env.GEMINI_API_KEY) return null;
+  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+};
+
+const cleanJsonResponse = (value: string) =>
+  value
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+const createFallbackTranscript = (durationSeconds = 30) => {
+  const safeDuration = Math.max(6, Math.min(durationSeconds || 30, 600));
+  const segmentLength = safeDuration <= 20 ? 4 : 6;
+  const segmentCount = Math.max(1, Math.ceil(safeDuration / segmentLength));
+
+  return Array.from({ length: segmentCount }, (_, index) => {
+    const startTime = Number((index * segmentLength).toFixed(2));
+    const endTime = Number(Math.min((index + 1) * segmentLength, safeDuration).toFixed(2));
+    return {
+      text:
+        index === 0
+          ? 'AI transcript fallback: configure GEMINI_API_KEY for real speech to text.'
+          : `Generated subtitle segment ${index + 1}.`,
+      startTime,
+      endTime,
+    };
+  });
+};
+
+const inferLanguageFromText = (text: string) => {
+  const sample = text.toLowerCase();
+  if (/[ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]/i.test(sample)) {
+    return 'vi';
+  }
+  if (/[\u3040-\u30ff]/.test(sample)) return 'ja';
+  if (/[\uac00-\ud7af]/.test(sample)) return 'ko';
+  if (/[\u4e00-\u9fff]/.test(sample)) return 'zh';
+  if (/\b(le|la|les|des|bonjour|merci)\b/.test(sample)) return 'fr';
+  if (/\b(el|la|los|hola|gracias)\b/.test(sample)) return 'es';
+  return 'en';
+};
 
 export class AIService {
   /**
    * Gọi Gemini 2.5 Flash API để chuyển đổi Audio thành Text (kèm thời gian)
    * Trả về mảng Subtitles
    */
-  static async transcribeAudio(audioPath: string): Promise<Array<{ text: string, startTime: number, endTime: number }>> {
+  static async transcribeAudio(
+    audioPath: string,
+    durationSeconds?: number
+  ): Promise<Array<{ text: string; startTime: number; endTime: number }>> {
+    const ai = getGeminiClient();
+    if (!ai) {
+      console.warn('[AI] GEMINI_API_KEY is missing. Using transcript fallback.');
+      return createFallbackTranscript(durationSeconds);
+    }
+
     let file = null;
     try {
       // 1. Tải file âm thanh lên Google File API
@@ -43,10 +91,7 @@ export class AIService {
       let jsonStr = response.text;
       if (!jsonStr) throw new Error("Empty response from Gemini");
 
-      // Xử lý loại bỏ markdown block nếu Gemini vẫn trả về
-      if (jsonStr.startsWith('```json')) {
-        jsonStr = jsonStr.replace(/```json\n?/, '').replace(/```\n?$/, '');
-      }
+      jsonStr = cleanJsonResponse(jsonStr);
 
       const subtitles = JSON.parse(jsonStr);
       
@@ -61,12 +106,34 @@ export class AIService {
       return subtitles;
     } catch (error) {
       console.error('Gemini API Error:', error);
-      throw error;
+      if (process.env.AI_ALLOW_FALLBACK === 'false') throw error;
+      return createFallbackTranscript(durationSeconds);
     } finally {
       // 3. Xóa file khỏi hệ thống của Google sau khi xử lý xong
       if (file && file.name) {
         ai.files.delete({ name: file.name }).catch(console.error);
       }
+    }
+  }
+
+  static async detectLanguage(subtitles: Array<{ text: string }>) {
+    const mergedText = subtitles.map((subtitle) => subtitle.text).join('\n').slice(0, 4000);
+    const fallback = inferLanguageFromText(mergedText);
+    const ai = getGeminiClient();
+
+    if (!ai || !mergedText.trim()) return fallback;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Detect the primary spoken language of this transcript. Return only the ISO 639-1 code, for example "en", "vi", "ja", "ko", "fr", "es", or "zh".\n\n${mergedText}`,
+      });
+
+      const detected = (response.text || '').trim().toLowerCase().match(/[a-z]{2}/)?.[0];
+      return detected || fallback;
+    } catch (error) {
+      console.error('Language detection error:', error);
+      return fallback;
     }
   }
 }

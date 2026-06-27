@@ -1,118 +1,285 @@
 import { Worker } from 'bullmq';
 import { redisConnection } from '../config/redis';
-import { getIO } from '../config/socket';
 import { prisma } from '@ai-video-translator/database';
 import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
-import axios from 'axios';
+import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
+import {
+  downloadToTempFile,
+  ensureTempDirs,
+  fromPublicTempUrl,
+  isRemoteUrl,
+  publishVideoFile,
+  resolveLocalMediaPath,
+  tempDir,
+} from '../utils/media';
+import { buildSubtitleFile } from '../utils/subtitle-format';
+import { emitPipelineProgress, estimateRemainingSeconds } from '../utils/pipeline';
 
-const tempDir = path.join(__dirname, '../../temp');
-if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+ensureTempDirs();
 
-// Helper tạo định dạng thời gian cho SRT
-const formatSrtTime = (seconds: number) => {
-  const date = new Date(seconds * 1000);
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  const ss = String(date.getUTCSeconds()).padStart(2, '0');
-  const ms = String(Math.floor((seconds % 1) * 1000)).padStart(3, '0');
-  return `${hh}:${mm}:${ss},${ms}`;
+type AudioMode = 'original' | 'dub' | 'dual';
+type Container = 'mp4' | 'mov' | 'mkv';
+type SubtitleFormat = 'srt' | 'ass' | 'vtt';
+
+const escapeSubtitlePath = (filePath: string) => filePath.replace(/\\/g, '/').replace(/'/g, "\\'");
+
+const prepareVideoSource = async (
+  projectId: string,
+  videoUrl: string,
+  startedAt: number,
+  onDownloadedPath: (filePath: string) => void
+) => {
+  const localPath = resolveLocalMediaPath(videoUrl);
+  if (localPath && fs.existsSync(localPath)) return localPath;
+
+  if (!isRemoteUrl(videoUrl)) throw new Error('Video URL is not available');
+
+  const downloadPath = path.join(tempDir, `${projectId}_export_source.mp4`);
+  onDownloadedPath(downloadPath);
+  await downloadToTempFile(videoUrl, downloadPath, (percent) => {
+    emitPipelineProgress({
+      projectId,
+      stepIndex: 8,
+      status: 'EXPORTING',
+      stepPercent: Math.min(20, Math.floor(percent / 5)),
+      message: `Đang chuẩn bị video gốc... ${percent}%`,
+      estimatedTimeLeft: estimateRemainingSeconds(startedAt, 8, Math.min(20, Math.floor(percent / 5))),
+    });
+  });
+  return downloadPath;
+};
+
+const createDubTrack = async (
+  projectId: string,
+  subtitles: Array<{ startTime: number; audioUrl?: string | null }>,
+  volume: number
+) => {
+  const audioSegments = subtitles
+    .map((subtitle) => {
+      if (!subtitle.audioUrl) return null;
+      const audioPath = subtitle.audioUrl.startsWith('/temp/')
+        ? fromPublicTempUrl(subtitle.audioUrl)
+        : resolveLocalMediaPath(subtitle.audioUrl);
+      if (!audioPath || !fs.existsSync(audioPath)) return null;
+      return {
+        path: audioPath,
+        delayMs: Math.max(0, Math.floor(subtitle.startTime * 1000)),
+      };
+    })
+    .filter(Boolean) as Array<{ path: string; delayMs: number }>;
+
+  if (audioSegments.length === 0) return null;
+
+  const dubPath = path.join(tempDir, `${projectId}_dub.mp3`);
+
+  await new Promise<void>((resolve, reject) => {
+    const command = ffmpeg();
+    audioSegments.forEach((segment) => command.input(segment.path));
+
+    const safeVolume = Math.max(0, Math.min(Number(volume || 1), 2));
+    const filters =
+      audioSegments.length === 1
+        ? [`[0:a]adelay=${audioSegments[0].delayMs}|${audioSegments[0].delayMs},apad,volume=${safeVolume}[dub]`]
+        : [
+            ...audioSegments.map(
+              (segment, index) =>
+                `[${index}:a]adelay=${segment.delayMs}|${segment.delayMs},apad,volume=${safeVolume}[d${index}]`
+            ),
+            `${audioSegments.map((_segment, index) => `[d${index}]`).join('')}amix=inputs=${audioSegments.length}:normalize=0:duration=longest[dub]`,
+          ];
+
+    command
+      .complexFilter(filters)
+      .outputOptions(['-map [dub]', '-c:a libmp3lame', '-q:a 4'])
+      .on('end', () => resolve())
+      .on('error', reject)
+      .save(dubPath);
+  });
+
+  return dubPath;
+};
+
+const renderVideo = async ({
+  inputPath,
+  subtitlePath,
+  outputPath,
+  dubPath,
+  audioMode,
+  container,
+  projectId,
+  startedAt,
+}: {
+  inputPath: string;
+  subtitlePath: string;
+  outputPath: string;
+  dubPath: string | null;
+  audioMode: AudioMode;
+  container: Container;
+  projectId: string;
+  startedAt: number;
+}) => {
+  await new Promise<void>((resolve, reject) => {
+    const command = ffmpeg(inputPath);
+    if (dubPath && audioMode !== 'original') command.input(dubPath);
+
+    const outputOptions = ['-c:v libx264', '-preset veryfast', '-pix_fmt yuv420p'];
+    if (container === 'mp4' || container === 'mov') outputOptions.push('-movflags +faststart');
+
+    if (dubPath && audioMode === 'dub') {
+      outputOptions.push('-map 0:v:0', '-map 1:a:0', '-c:a aac', '-shortest');
+    } else if (dubPath && audioMode === 'dual') {
+      outputOptions.push(
+        '-map 0:v:0',
+        '-map 0:a?',
+        '-map 1:a:0',
+        '-c:a aac',
+        '-metadata:s:a:0 title=Original',
+        '-metadata:s:a:1 title=AI Dub'
+      );
+    } else {
+      outputOptions.push('-c:a copy');
+    }
+
+    command
+      .videoFilters(`subtitles='${escapeSubtitlePath(subtitlePath)}'`)
+      .outputOptions(outputOptions)
+      .on('progress', (progress) => {
+        const percent = Math.min(95, Math.max(35, Math.floor(progress.percent || 35)));
+        emitPipelineProgress({
+          projectId,
+          stepIndex: 8,
+          status: 'EXPORTING',
+          stepPercent: percent,
+          message: `Đang render video... ${percent}%`,
+          estimatedTimeLeft: estimateRemainingSeconds(startedAt, 8, percent),
+        });
+      })
+      .on('end', () => resolve())
+      .on('error', reject)
+      .save(outputPath);
+  });
 };
 
 export const exportWorker = new Worker(
   'exportProcessing',
   async (job) => {
-    const { projectId } = job.data;
-    console.log(`Bắt đầu Export Video cho Project ${projectId}...`);
-    
-    const io = getIO();
-    const notify = (status: string, percent: number, exportUrl?: string) => {
-      io.to(`project_${projectId}`).emit('processProgress', { projectId, status, percent, exportUrl });
-    };
+    const {
+      projectId,
+      container = 'mp4',
+      subtitleFormat = 'srt',
+      audioMode = 'dual',
+      volume = 1,
+    }: {
+      projectId: string;
+      container?: Container;
+      subtitleFormat?: SubtitleFormat;
+      audioMode?: AudioMode;
+      volume?: number;
+    } = job.data;
 
-    let originalVideoPath = '';
-    let srtPath = '';
-    let outputPath = '';
+    const startedAt = Date.now();
+    let downloadedSourcePath = '';
+    const finalContainer: Container = ['mp4', 'mov', 'mkv'].includes(container) ? container : 'mp4';
+    const finalSubtitleFormat: SubtitleFormat = ['srt', 'ass', 'vtt'].includes(subtitleFormat)
+      ? subtitleFormat
+      : 'srt';
+    const finalAudioMode: AudioMode = ['original', 'dub', 'dual'].includes(audioMode) ? audioMode : 'dual';
+
+    const subtitlePath = path.join(tempDir, `${projectId}.${finalSubtitleFormat}`);
+    const burnSubtitlePath = path.join(tempDir, `${projectId}_burn.srt`);
+    const outputPath = path.join(tempDir, `${projectId}_final.${finalContainer}`);
 
     try {
       await prisma.project.update({ where: { id: projectId }, data: { status: 'EXPORTING' } });
-      notify('EXPORTING', 10);
+      emitPipelineProgress({
+        projectId,
+        stepIndex: 8,
+        status: 'EXPORTING',
+        stepPercent: 5,
+        message: 'Đang chuẩn bị dữ liệu export...',
+        estimatedTimeLeft: estimateRemainingSeconds(startedAt, 8, 5),
+      });
 
       const project = await prisma.project.findUnique({ where: { id: projectId } });
-      if (!project || !project.videoUrl) throw new Error('Project/Video not found');
+      if (!project?.videoUrl) throw new Error('Project/Video not found');
 
-      // 1. Tải Video gốc về temp folder
-      originalVideoPath = path.join(tempDir, `${projectId}_original.mp4`);
-      const response = await axios({ url: project.videoUrl, method: 'GET', responseType: 'stream' });
-      const writer = fs.createWriteStream(originalVideoPath);
-      response.data.pipe(writer);
-      
-      await new Promise((resolve, reject) => {
-        writer.on('finish', () => resolve(true));
-        writer.on('error', reject);
+      const inputPath = await prepareVideoSource(projectId, project.videoUrl, startedAt, (filePath) => {
+        downloadedSourcePath = filePath;
       });
-      notify('EXPORTING', 30);
 
-      // 2. Tạo file SRT từ Subtitles
       const subtitles = await prisma.subtitle.findMany({ where: { projectId }, orderBy: { startTime: 'asc' } });
-      let srtContent = '';
-      subtitles.forEach((sub: any, i: number) => {
-        const text = sub.translatedText || sub.text;
-        srtContent += `${i + 1}\n${formatSrtTime(sub.startTime)} --> ${formatSrtTime(sub.endTime)}\n${text}\n\n`;
+      if (subtitles.length === 0) throw new Error('No subtitles found');
+
+      fs.writeFileSync(subtitlePath, buildSubtitleFile(subtitles, finalSubtitleFormat));
+      fs.writeFileSync(burnSubtitlePath, buildSubtitleFile(subtitles, 'srt'));
+
+      emitPipelineProgress({
+        projectId,
+        stepIndex: 8,
+        status: 'EXPORTING',
+        stepPercent: 25,
+        message: `Đã tạo phụ đề ${finalSubtitleFormat.toUpperCase()}, đang chuẩn bị audio...`,
+        estimatedTimeLeft: estimateRemainingSeconds(startedAt, 8, 25),
       });
-      srtPath = path.join(tempDir, `${projectId}.srt`);
-      fs.writeFileSync(srtPath, srtContent);
-      notify('EXPORTING', 50);
 
-      // 3. Dùng FFmpeg để burn hard-sub vào Video
-      outputPath = path.join(tempDir, `${projectId}_final.mp4`);
-      
-      // Chú ý: Filter subtitles trong FFmpeg yêu cầu escape đường dẫn (nhất là trên Windows)
-      // Để tránh lỗi, ta sẽ cd vào thư mục temp trước hoặc escape tốt nhất có thể
-      const srtPathFfmpeg = srtPath.replace(/\\/g, '/');
-
-      await new Promise((resolve, reject) => {
-        ffmpeg(originalVideoPath)
-          .videoFilters(`subtitles=${srtPathFfmpeg}`)
-          .outputOptions('-c:a copy') // Giữ nguyên audio
-          .on('progress', (progress) => {
-            if (progress.percent) {
-              const currentPercent = Math.min(50 + Math.floor(progress.percent / 2), 95);
-              notify('EXPORTING', currentPercent);
-            }
-          })
-          .on('end', () => resolve(true))
-          .on('error', reject)
-          .save(outputPath);
+      const dubPath = await createDubTrack(projectId, subtitles, volume);
+      emitPipelineProgress({
+        projectId,
+        stepIndex: 8,
+        status: 'EXPORTING',
+        stepPercent: 35,
+        message: dubPath ? 'Đã tạo track AI dub, bắt đầu render...' : 'Không có track dub, render với audio gốc...',
+        estimatedTimeLeft: estimateRemainingSeconds(startedAt, 8, 35),
       });
-      
-      notify('EXPORTING', 95);
 
-      // 4. (Giả lập) Upload Video Final lên S3/Cloudinary
-      // Ở đây ta ghi nhận link local của output path hoặc public URL nếu có server static. 
-      // Do là demo, ta tạm dùng /temp (Cần map express static vào /temp)
-      const exportUrl = `/temp/${projectId}_final.mp4`;
+      await renderVideo({
+        inputPath,
+        subtitlePath: burnSubtitlePath,
+        outputPath,
+        dubPath,
+        audioMode: finalAudioMode,
+        container: finalContainer,
+        projectId,
+        startedAt,
+      });
 
+      const exportUrl = await publishVideoFile(outputPath, projectId);
       await prisma.project.update({
         where: { id: projectId },
         data: { status: 'EXPORTED', exportUrl },
       });
 
-      notify('EXPORTED', 100, exportUrl);
-      console.log(`Hoàn tất Export Video cho Project ${projectId}`);
+      emitPipelineProgress({
+        projectId,
+        stepIndex: 8,
+        status: 'EXPORTED',
+        stepPercent: 100,
+        message: 'Render hoàn tất. Video đã sẵn sàng để tải xuống.',
+        estimatedTimeLeft: 0,
+        exportUrl,
+      });
 
-    } catch (error) {
-      console.error('Lỗi Export Worker:', error);
+      return { projectId, exportUrl };
+    } catch (error: any) {
       await prisma.project.update({ where: { id: projectId }, data: { status: 'FAILED' } });
-      notify('FAILED', 0);
+      emitPipelineProgress({
+        projectId,
+        stepIndex: 8,
+        status: 'FAILED',
+        stepPercent: 0,
+        message: error.message || 'Không thể export video.',
+      });
       throw error;
     } finally {
-      // Dọn dẹp file trung gian
-      if (fs.existsSync(originalVideoPath)) fs.unlinkSync(originalVideoPath);
-      if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
-      // Không xóa outputPath vì user cần tải
+      if (downloadedSourcePath && fs.existsSync(downloadedSourcePath)) fs.unlinkSync(downloadedSourcePath);
+      if (fs.existsSync(burnSubtitlePath)) fs.unlinkSync(burnSubtitlePath);
     }
   },
   { connection: redisConnection as any }
 );
+
+exportWorker.on('completed', (job) => console.log(`Export job ${job.id} completed.`));
+exportWorker.on('failed', (job, err) => console.log(`Export job ${job?.id} failed: ${err.message}`));

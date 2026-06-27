@@ -45,7 +45,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const res = await api.post("/auth/login", values)
-      setAuth(res.data.data.user, res.data.data.tokens.accessToken)
+      setAuth(res.data.data.user, res.data.data.tokens.accessToken, res.data.data.tokens.refreshToken)
       toast.success("Đăng nhập thành công!")
       router.push("/dashboard")
     } catch (error: any) {
@@ -58,7 +58,7 @@ export default function LoginPage() {
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
       const res = await api.post("/auth/google", { idToken: credentialResponse.credential })
-      setAuth(res.data.data.user, res.data.data.tokens.accessToken)
+      setAuth(res.data.data.user, res.data.data.tokens.accessToken, res.data.data.tokens.refreshToken)
       toast.success("Đăng nhập Google thành công!")
       router.push("/dashboard")
     } catch (error: any) {
