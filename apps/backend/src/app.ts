@@ -17,7 +17,10 @@ import paymentRoutes from './routes/payment.routes';
 import { PaymentController } from './controllers/payment.controller';
 
 // Middlewares
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({ 
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: false
+}));
 app.use(cors({
   origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
   credentials: true,

@@ -198,6 +198,7 @@ export default function SubtitleEditorPage() {
     const finalUrl = getFullMediaUrl(url)
     console.log('[Audio] Playing:', finalUrl)
     const audio = new Audio(finalUrl)
+    audio.crossOrigin = "anonymous"
     
     audio.play().catch(err => {
       console.error('[Audio] Playback failed:', err)
