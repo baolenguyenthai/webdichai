@@ -184,8 +184,16 @@ export default function SubtitleEditorPage() {
     }
   }
 
+  const getFullMediaUrl = (url: string) => {
+    if (url.startsWith('/temp/')) {
+      const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000'
+      return `${apiBase}${url}`
+    }
+    return url
+  }
+
   const playAudio = (url: string) => {
-    const audio = new Audio(url)
+    const audio = new Audio(getFullMediaUrl(url))
     audio.play()
   }
 
@@ -272,7 +280,7 @@ export default function SubtitleEditorPage() {
             {project.videoUrl && !/youtube\.com|youtu\.be|douyin\.com|tiktok\.com|facebook\.com|vimeo\.com/i.test(project.videoUrl) ? (
               <video 
                 ref={videoRef}
-                src={project.videoUrl} 
+                src={getFullMediaUrl(project.videoUrl)} 
                 controls 
                 className="max-w-full max-h-full aspect-video"
                 crossOrigin="anonymous"

@@ -291,15 +291,23 @@ const STATUS_TO_STEP: Record<string, number> = {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {projects.map((project: any) => (
-            <Card key={project.id} className="overflow-hidden flex flex-col group relative">
-              {project.isFavorite && (
-                <Heart className="absolute top-2 left-2 h-4 w-4 text-red-500 fill-red-500 z-10" />
-              )}
-              <div className="aspect-video bg-muted relative flex items-center justify-center">
-                {project.videoUrl && !/youtube\.com|youtu\.be|douyin\.com|tiktok\.com|facebook\.com|vimeo\.com/i.test(project.videoUrl) ? (
-                  <video src={project.videoUrl} className="w-full h-full object-cover" />
-                ) : (
+          {projects.map((project: any) => {
+            const getFullMediaUrl = (url: string) => {
+              if (url.startsWith('/temp/')) {
+                const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000'
+                return `${apiBase}${url}`
+              }
+              return url
+            }
+            return (
+              <Card key={project.id} className="overflow-hidden flex flex-col group relative">
+                {project.isFavorite && (
+                  <Heart className="absolute top-2 left-2 h-4 w-4 text-red-500 fill-red-500 z-10" />
+                )}
+                <div className="aspect-video bg-muted relative flex items-center justify-center">
+                  {project.videoUrl && !/youtube\.com|youtu\.be|douyin\.com|tiktok\.com|facebook\.com|vimeo\.com/i.test(project.videoUrl) ? (
+                    <video src={getFullMediaUrl(project.videoUrl)} className="w-full h-full object-cover" />
+                  ) : (
                   <Play className="h-8 w-8 text-muted-foreground opacity-50" />
                 )}
                 
