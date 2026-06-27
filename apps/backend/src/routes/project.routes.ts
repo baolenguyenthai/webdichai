@@ -15,6 +15,7 @@ router.get('/:id', ProjectController.getProject);
 router.patch('/:id', ProjectController.updateProject);
 router.post('/:id/translate', ProjectController.translateProject);
 router.post('/:id/export', ProjectController.exportProject);
+router.post('/:id/retry', ProjectController.retryProject);
 router.delete('/:id/trash', ProjectController.trashProject);
 router.delete('/:id', ProjectController.deleteProject);
 

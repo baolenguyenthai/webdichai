@@ -55,6 +55,9 @@ export default function DashboardPage() {
       } else if (action === "favorite") {
         const p = projects.find((x) => x.id === id)
         await api.patch(`/projects/${id}`, { isFavorite: !p?.isFavorite })
+      } else if (action === "retry") {
+        await api.post(`/projects/${id}/retry`)
+        toast.success("Đã đưa vào hàng đợi xử lý lại")
       }
       fetchProjects()
     } catch (error) {
@@ -189,6 +192,11 @@ export default function DashboardPage() {
                       <MoreVertical className="h-4 w-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {project.status === 'FAILED' && (
+                      <DropdownMenuItem onClick={() => handleAction("retry", project.id)}>
+                        <Play className="mr-2 h-4 w-4" /> Thử lại xử lý
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem>
                       <Edit className="mr-2 h-4 w-4" /> Đổi tên
                     </DropdownMenuItem>

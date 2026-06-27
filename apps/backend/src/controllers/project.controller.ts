@@ -112,4 +112,27 @@ export class ProjectController {
       res.status(400).json({ status: 'error', message: error.message });
     }
   }
+
+  static async retryProject(req: AuthenticatedRequest, res: Response) {
+    try {
+      const project = await ProjectService.getProject(req.userId!, req.params.id);
+      if (project.status !== 'FAILED') {
+        throw new Error('Only FAILED projects can be retried');
+      }
+
+      const { prisma } = require('@ai-video-translator/database');
+      await prisma.subtitle.deleteMany({ where: { projectId: project.id } });
+
+      await prisma.project.update({
+        where: { id: project.id },
+        data: { status: 'PENDING' },
+      });
+
+      await addVideoProcessingJob(project.id, project.videoUrl);
+
+      res.status(200).json({ status: 'success', message: 'Project queued for retry' });
+    } catch (error: any) {
+      res.status(400).json({ status: 'error', message: error.message });
+    }
+  }
 }
