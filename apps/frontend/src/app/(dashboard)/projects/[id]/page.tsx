@@ -185,16 +185,24 @@ export default function SubtitleEditorPage() {
   }
 
   const getFullMediaUrl = (url: string) => {
+    let finalUrl = url
     if (url.startsWith('/temp/')) {
       const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000'
-      return `${apiBase}${url}`
+      finalUrl = `${apiBase}${url}`
     }
-    return url
+    console.log('[Media] Resolved URL:', { original: url, resolved: finalUrl })
+    return finalUrl
   }
 
   const playAudio = (url: string) => {
-    const audio = new Audio(getFullMediaUrl(url))
-    audio.play()
+    const finalUrl = getFullMediaUrl(url)
+    console.log('[Audio] Playing:', finalUrl)
+    const audio = new Audio(finalUrl)
+    
+    audio.play().catch(err => {
+      console.error('[Audio] Playback failed:', err)
+      toast.error('Không thể phát âm thanh. Vui lòng kiểm tra Console Log.')
+    })
   }
 
   if (loading) return <div className="flex h-full items-center justify-center">Đang tải Studio...</div>

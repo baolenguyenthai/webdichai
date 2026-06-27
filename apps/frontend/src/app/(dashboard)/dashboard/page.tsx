@@ -293,11 +293,12 @@ const STATUS_TO_STEP: Record<string, number> = {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {projects.map((project: any) => {
             const getFullMediaUrl = (url: string) => {
+              let finalUrl = url
               if (url.startsWith('/temp/')) {
                 const apiBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000'
-                return `${apiBase}${url}`
+                finalUrl = `${apiBase}${url}`
               }
-              return url
+              return finalUrl
             }
             return (
               <Card key={project.id} className="overflow-hidden flex flex-col group relative">
